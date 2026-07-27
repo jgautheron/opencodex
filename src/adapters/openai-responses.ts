@@ -660,10 +660,14 @@ function usageFromResponsesPayload(payload: unknown): OcxUsage | undefined {
   const inputTokens = typeof usage.input_tokens === "number" ? usage.input_tokens : 0;
   const outputTokens = typeof usage.output_tokens === "number" ? usage.output_tokens : 0;
   if (inputTokens === 0 && outputTokens === 0) return undefined;
+  const inputDetails = isPlainObject(usage.input_tokens_details) ? usage.input_tokens_details : undefined;
+  const outputDetails = isPlainObject(usage.output_tokens_details) ? usage.output_tokens_details : undefined;
   return {
     inputTokens,
     outputTokens,
     ...(typeof usage.total_tokens === "number" ? { totalTokens: usage.total_tokens } : {}),
+    ...(typeof inputDetails?.cached_tokens === "number" ? { cachedInputTokens: inputDetails.cached_tokens } : {}),
+    ...(typeof outputDetails?.reasoning_tokens === "number" ? { reasoningOutputTokens: outputDetails.reasoning_tokens } : {}),
   };
 }
 
