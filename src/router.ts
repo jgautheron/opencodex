@@ -300,9 +300,9 @@ function isBareOpenAiFamilyModel(modelId: string): boolean {
  * id (gpt-, o1-, o3-, or o4- prefixed, no slash) is unreachable under that bare name
  * whenever an active native "openai" (Codex) provider is also configured: isBareOpenAiFamilyModel
  * claims any such id first in routeModelInternal, before any other provider's
- * defaultModel/models match is ever consulted (devlog 260727 subagent-cache-audit
- * follow-up — found via a real routing collision between a custom gateway provider
- * and the DEFAULT_SUBAGENT_MODELS roster, which reuses bare gpt-5.6-* names).
+ * defaultModel/models match is ever consulted — found via a real routing collision
+ * between a custom gateway provider and a subagent roster that reused bare model
+ * names.
  *
  * The model is still reachable via the qualified "<provider>/<model>" form (the
  * slash-namespace branch runs before the bare-family check) — this only warns that
