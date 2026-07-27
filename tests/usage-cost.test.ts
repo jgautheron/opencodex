@@ -124,6 +124,28 @@ describe("resolveMatchedPrice", () => {
     }
   });
 
+  test("claude-opus-5 falls back to the wildcard row for a gateway not enumerated above", () => {
+    // Private/custom anthropic-adapter gateways can't be named in this table ahead of
+    // time, so an unrecognized provider must still price claude-opus-5 via the "*" row.
+    const price = resolveMatchedPrice("some-custom-anthropic-gateway", "claude-opus-5");
+    expect(price).toMatchObject({
+      provider: "some-custom-anthropic-gateway",
+      modelId: "claude-opus-5",
+      cost4: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+      source: "expected",
+      status: "verified-derived",
+    });
+  });
+
+  test("wildcard row never wins over an exact-provider row of the same status", () => {
+    const overlays: ExpectedPriceOverlay[] = [
+      { provider: "*", modelId: "m", cost4: { input: 999, output: 999, cacheRead: 9, cacheWrite: 9 }, source: "wildcard", verifiedAt: "2026-07-20", status: "verified-derived" },
+      { provider: "p", modelId: "m", cost4: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0 }, source: "exact", verifiedAt: "2026-07-20", status: "verified-derived" },
+    ];
+    expect(findExpectedPriceOverlay("p", "m", overlays)?.source).toBe("exact");
+    expect(findExpectedPriceOverlay("other-provider", "m", overlays)?.source).toBe("wildcard");
+  });
+
   test("17. model-level fallback: kiro's claude opus follows the anthropic price", () => {
     const price = resolveMatchedPrice("kiro", "claude-opus-4.6");
     expect(price).not.toBeNull();
@@ -212,14 +234,15 @@ describe("resolveMatchedPrice", () => {
     expect(resolveMatchedPrice("openrouter", "anthropic-claude-3.5-sonnet")).toBeNull();
   });
 
-  test("16. shipped overlay membership: 48 keys, including Opus 5 and compatibility prices", () => {
-    expect(EXPECTED_PRICE_OVERLAYS.length).toBe(48);
+  test("16. shipped overlay membership: 49 keys, including Opus 5 and compatibility prices", () => {
+    expect(EXPECTED_PRICE_OVERLAYS.length).toBe(49);
     expect(EXPECTED_PRICE_OVERLAYS.some(row => row.status === "unverified")).toBe(false);
     const keys = new Set(EXPECTED_PRICE_OVERLAYS.map(row => `${row.provider}/${row.modelId}`));
     for (const expected of [
       "anthropic/claude-opus-5",
       "cursor/claude-opus-5",
       "kiro/claude-opus-5",
+      "*/claude-opus-5",
       "minimax/MiniMax-M2.1-highspeed",
       "minimax-cn/MiniMax-M2.1-highspeed",
       "deepseek/deepseek-chat",

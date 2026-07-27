@@ -66,6 +66,10 @@ export const EXPECTED_PRICE_OVERLAYS: readonly ExpectedPriceOverlay[] = [
   { provider: "anthropic", modelId: "claude-opus-5", cost4: CLAUDE_OPUS_46, source: CLAUDE_OPUS_5_DERIVED_SOURCE, verifiedAt: "2026-07-25", status: "verified-derived" },
   { provider: "cursor", modelId: "claude-opus-5", cost4: CLAUDE_OPUS_46, source: CLAUDE_OPUS_5_DERIVED_SOURCE, verifiedAt: "2026-07-25", status: "verified-derived" },
   { provider: "kiro", modelId: "claude-opus-5", cost4: CLAUDE_OPUS_46, source: CLAUDE_OPUS_5_DERIVED_SOURCE, verifiedAt: "2026-07-25", status: "verified-derived" },
+  // Wildcard fallback for any OTHER anthropic-adapter gateway (private/company
+  // proxies etc.) that exposes claude-opus-5 under its own provider name — see
+  // findExpectedPriceOverlay's "*" handling below.
+  { provider: "*", modelId: "claude-opus-5", cost4: CLAUDE_OPUS_46, source: CLAUDE_OPUS_5_DERIVED_SOURCE, verifiedAt: "2026-07-25", status: "verified-derived" },
   // MiniMax M2.1 highspeed — published PAYG price (verified).
   { provider: "minimax", modelId: "MiniMax-M2.1-highspeed", cost4: MINIMAX_M21_HIGHSPEED, source: MINIMAX_PRICING, verifiedAt: "2026-07-20", status: "verified" },
   { provider: "minimax-cn", modelId: "MiniMax-M2.1-highspeed", cost4: MINIMAX_M21_HIGHSPEED, source: MINIMAX_PRICING, verifiedAt: "2026-07-20", status: "verified" },
@@ -129,9 +133,12 @@ export const EXPECTED_PRICE_OVERLAYS: readonly ExpectedPriceOverlay[] = [
 ];
 
 /**
- * Exact-key overlay lookup. Returns verified first, then verified-derived.
- * NEVER returns "unverified" rows — fail-closed is enforced in code, not just docs.
- * No fuzzy / case-fold / wire-model fallback.
+ * Exact-key overlay lookup, falling back to a "*" (any-provider) row for the same
+ * modelId when no exact provider match exists — covers private/custom gateways that
+ * expose a known model under a provider name this table can't enumerate in advance.
+ * Returns verified first, then verified-derived. NEVER returns "unverified" rows —
+ * fail-closed is enforced in code, not just docs. No fuzzy / case-fold / wire-model
+ * fallback beyond the "*" provider match.
  */
 export function findExpectedPriceOverlay(
   provider: string,
@@ -139,8 +146,12 @@ export function findExpectedPriceOverlay(
   overlays: readonly ExpectedPriceOverlay[] = EXPECTED_PRICE_OVERLAYS,
 ): ExpectedPriceOverlay | undefined {
   const exact = overlays.filter(row => row.provider === provider && row.modelId === modelId);
-  return exact.find(row => row.status === "verified")
+  const found = exact.find(row => row.status === "verified")
     ?? exact.find(row => row.status === "verified-derived");
+  if (found) return found;
+  const wildcard = overlays.filter(row => row.provider === "*" && row.modelId === modelId);
+  return wildcard.find(row => row.status === "verified")
+    ?? wildcard.find(row => row.status === "verified-derived");
 }
 
 /**
