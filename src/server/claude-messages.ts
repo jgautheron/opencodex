@@ -657,6 +657,21 @@ export async function handleClaudeMessages(
     body: JSON.stringify(internalBody),
   });
 
+  // Cold-key lease (opt-in, devlog 260727 subagent-cache-audit): a parallel Task-tool
+  // fan-out that dispatches several requests sharing the SAME content-based
+  // prompt_cache_key races all of them before any has written its cache entry, so
+  // every one misses even though they'd agree on the same key. The leader (first
+  // arrival for this key) proceeds immediately; followers wait for the leader's
+  // first output token before dispatching, so they land on a warm cache instead of
+  // racing a cold one. See src/lib/cold-cache-key-lease.ts.
+  let coldKeyRelease: (() => void) | undefined;
+  if (config.claudeCode?.serializeColdSubagentCache && typeof internalBody.prompt_cache_key === "string") {
+    const { acquireColdCacheKeyLease } = await import("../lib/cold-cache-key-lease");
+    const lease = acquireColdCacheKeyLease(internalBody.prompt_cache_key);
+    if (lease.waitForLeader) await lease.waitForLeader;
+    else coldKeyRelease = lease.release;
+  }
+
   // Request-log wiring mirrors the /v1/responses route: native passthrough finalizes
   // via the terminal callbacks; routed streams get the Responses-vocabulary log tap
   // BEFORE translation (the translated Anthropic stream has no response.completed
@@ -667,12 +682,23 @@ export async function handleClaudeMessages(
     nativeLogged = true;
     addFinalRequestLog(logIds.requestId, logIds.start, logCtx, status, meta);
   };
-  const upstream = await handleResponses(internalReq, buildClaudeReplayConfig(config), logCtx, {
-    abortSignal: req.signal,
-    ...(logIds ? { onFirstOutput: () => recordFirstOutput(logCtx, logIds.start) } : {}),
-    onNativePassthroughTerminal: status => finalizeNativeLog(httpStatusForTerminalStatus(status), { terminalStatus: status, closeReason: "terminal" }),
-    onNativePassthroughCancel: () => finalizeNativeLog(499, { closeReason: "client_cancel" }),
-  });
+  const onFirstOutput = () => {
+    if (logIds) recordFirstOutput(logCtx, logIds.start);
+    coldKeyRelease?.();
+  };
+  let upstream: Response;
+  try {
+    upstream = await handleResponses(internalReq, buildClaudeReplayConfig(config), logCtx, {
+      abortSignal: req.signal,
+      onFirstOutput,
+      onNativePassthroughTerminal: status => finalizeNativeLog(httpStatusForTerminalStatus(status), { terminalStatus: status, closeReason: "terminal" }),
+      onNativePassthroughCancel: () => finalizeNativeLog(499, { closeReason: "client_cancel" }),
+    });
+  } finally {
+    // Fallback release: the leader errored/aborted before any output token, so
+    // onFirstOutput never fired — followers must not wait forever.
+    coldKeyRelease?.();
+  }
   const response = logIds ? responseWithDeferredRequestLog(upstream, logIds.requestId, logIds.start, logCtx) : upstream;
 
   if (!response.ok) {
