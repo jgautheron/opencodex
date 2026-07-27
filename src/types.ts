@@ -430,7 +430,7 @@ export interface OcxClaudeCodeConfig {
    * several subagents of the same persona fired in one message) before any of them
    * has completed, the very first one to land at OpenAI hasn't written its cache
    * entry yet — every sibling that races in during that window misses too, even
-   * though they all agree on the same key (devlog 260727 subagent-cache-audit).
+   * though they all agree on the same key.
    *
    * When enabled, the first request for a not-yet-seen key proceeds immediately
    * (the "leader"); any sibling sharing that key while the leader is still in

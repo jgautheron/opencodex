@@ -1,5 +1,5 @@
 /**
- * Cold prompt_cache_key lease (devlog 260727 subagent-cache-audit).
+ * Cold prompt_cache_key lease.
  *
  * A content-based prompt_cache_key (see claude/inbound.ts) makes every request that
  * shares the same resolved model + system + tools agree on the same OpenAI cache

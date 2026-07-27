@@ -657,8 +657,8 @@ export async function handleClaudeMessages(
     body: JSON.stringify(internalBody),
   });
 
-  // Cold-key lease (opt-in, devlog 260727 subagent-cache-audit): a parallel Task-tool
-  // fan-out that dispatches several requests sharing the SAME content-based
+  // Cold-key lease (opt-in): a parallel Task-tool fan-out that dispatches several
+  // requests sharing the SAME content-based
   // prompt_cache_key races all of them before any has written its cache entry, so
   // every one misses even though they'd agree on the same key. The leader (first
   // arrival for this key) proceeds immediately; followers wait for the leader's
