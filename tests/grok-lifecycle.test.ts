@@ -88,13 +88,13 @@ describe("Grok fence lifecycle wiring", () => {
     expect(stopFn).not.toContain("process.exit(1)");
 
     // handleEnsure() early-returns without relaunching when codexAutoStart is disabled,
-    // which silently ate `restart` too (devlog 260727 restart-ignores-codex-autostart) —
-    // handleTrayProxyStart() relaunches unconditionally instead.
+    // which silently ate `restart` too — handleTrayProxyStart() relaunches
+    // unconditionally instead.
     const restartCase = sliceFn(CLI_SOURCE, 'case "restart"', 'case "health"');
     expect(restartCase).toContain("if (await handleStop()) await handleTrayProxyStart()");
   });
 
-  test("handleTrayProxyStart still syncs the Grok fence and Codex models (devlog 260727 grok-fence-parity)", () => {
+  test("handleTrayProxyStart still syncs the Grok fence and Codex models", () => {
     // Repointing restart at handleTrayProxyStart (above) fixed the codexAutoStart no-op but
     // silently dropped the Grok-fence/model sync handleEnsure always performed — caught by
     // this suite failing on the OLD assertion above once the swap landed. Guard both sides:
