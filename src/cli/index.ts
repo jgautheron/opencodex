@@ -864,7 +864,13 @@ switch (command) {
   case "restart": {
     // A failed stop must not be followed by a re-inject: with a foreign service still running
     // (ownership mismatch) we would rewrite shared config we just declined to touch.
-    if (await handleStop()) await handleEnsure();
+    //
+    // handleEnsure() early-returns without relaunching when codexAutoStart is disabled —
+    // that flag governs whether opencodex registers itself with the Codex CLI on boot, an
+    // unrelated concern, but it silently ate `restart` too: stop succeeded, nothing ever
+    // came back up. handleTrayProxyStart() (already used by the tray's own restart action)
+    // relaunches the proxy unconditionally, independent of codexAutoStart.
+    if (await handleStop()) await handleTrayProxyStart();
     else console.error("↩️  Restart aborted: the proxy was not stopped cleanly.");
     break;
   }
