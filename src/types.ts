@@ -425,6 +425,24 @@ export interface OcxClaudeCodeConfig {
    */
   blockedSkills?: string[];
   /**
+   * When a parallel Task-tool fan-out dispatches several requests sharing the SAME
+   * content-based prompt_cache_key (identical resolved model + system + tools, e.g.
+   * several subagents of the same persona fired in one message) before any of them
+   * has completed, the very first one to land at OpenAI hasn't written its cache
+   * entry yet — every sibling that races in during that window misses too, even
+   * though they all agree on the same key (devlog 260727 subagent-cache-audit).
+   *
+   * When enabled, the first request for a not-yet-seen key proceeds immediately
+   * (the "leader"); any sibling sharing that key while the leader is still in
+   * flight waits until the leader's first output token (roughly when the model has
+   * finished ingesting the prompt and the cache write should have landed), then
+   * proceeds — trading a bounded chunk of added latency on cold siblings for
+   * avoiding N-1 duplicate cold-rewrite costs. Default: disabled — this changes
+   * latency characteristics of parallel fan-out and should be opted into
+   * deliberately, not silently on by default.
+   */
+  serializeColdSubagentCache?: boolean;
+  /**
    * Sync the featured subagent roster (config.subagentModels + main model) into
    * ~/.claude/agents/ocx-*.md custom agent definitions at launch (devlog 260712
    * 070) so any routed model is dispatchable as a subagent_type — the Agent
