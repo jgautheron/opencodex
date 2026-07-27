@@ -313,21 +313,56 @@ function isBareOpenAiFamilyModel(modelId: string): boolean {
  */
 export function warnUnreachableBareModelAliases(config: OcxConfig): void {
   const codex = config.providers[OPENAI_CODEX_PROVIDER_ID];
-  if (!codex || codex.disabled === true) return; // nothing claims bare ids first in that case
-  for (const [name, prov] of activeProviderEntries(config)) {
-    if (name === OPENAI_CODEX_PROVIDER_ID) continue;
-    const candidates = new Set<string>();
-    if (typeof prov.defaultModel === "string") candidates.add(prov.defaultModel);
-    if (Array.isArray(prov.models)) {
-      for (const m of prov.models) if (typeof m === "string") candidates.add(m);
+  if (codex && codex.disabled !== true) {
+    for (const [name, prov] of activeProviderEntries(config)) {
+      if (name === OPENAI_CODEX_PROVIDER_ID) continue;
+      const candidates = new Set<string>();
+      if (typeof prov.defaultModel === "string") candidates.add(prov.defaultModel);
+      if (Array.isArray(prov.models)) {
+        for (const m of prov.models) if (typeof m === "string") candidates.add(m);
+      }
+      for (const modelId of candidates) {
+        if (isBareOpenAiFamilyModel(modelId)) {
+          console.warn(
+            `⚠️  provider "${name}" model "${modelId}" is unreachable by that bare name — ` +
+            `the native "openai" provider claims all bare gpt-*/o1-*/o3-*/o4-* ids first. ` +
+            `Use "${name}/${modelId}" instead (e.g. in subagentModels, modelMap) to route to "${name}".`,
+          );
+        }
+      }
     }
-    for (const modelId of candidates) {
-      if (isBareOpenAiFamilyModel(modelId)) {
-        console.warn(
-          `⚠️  provider "${name}" model "${modelId}" is unreachable by that bare name — ` +
-          `the native "openai" provider claims all bare gpt-*/o1-*/o3-*/o4-* ids first. ` +
-          `Use "${name}/${modelId}" instead (e.g. in subagentModels, modelMap) to route to "${name}".`,
-        );
+  }
+  warnUnreachablePatternTableModels(config);
+}
+
+/**
+ * Same class of bug, different table: MODEL_PROVIDER_PATTERNS routes a bare id whose
+ * prefix matches a hardcoded pattern (e.g. "claude-") to whichever ACTIVE provider is
+ * literally named (or "name-"-prefixed) after that pattern's providerNames, and it
+ * runs in routeModelInternal before any provider's own `models[]` array is ever
+ * consulted. A provider that explicitly lists such an id in `models[]` loses to that
+ * pattern-table provider silently, same shape as the bare-OpenAI-family case above —
+ * just keyed off a provider NAME collision instead of a provider-agnostic prefix.
+ * `defaultModel` matches are excluded: those are checked before the pattern table, so
+ * they're already reachable regardless of this collision.
+ */
+function warnUnreachablePatternTableModels(config: OcxConfig): void {
+  const active = activeProviderEntries(config);
+  const defaultModels = new Set(active.map(([, prov]) => prov.defaultModel).filter((m): m is string => typeof m === "string"));
+  for (const [name, prov] of active) {
+    if (!Array.isArray(prov.models)) continue;
+    for (const modelId of prov.models) {
+      if (typeof modelId !== "string" || modelId.includes("/") || defaultModels.has(modelId)) continue;
+      for (const { providerNames, prefixes } of MODEL_PROVIDER_PATTERNS) {
+        if (!prefixes.some(prefix => modelId.startsWith(prefix))) continue;
+        const patternProvider = active.find(([n]) => providerNames.some(pn => n === pn || n.startsWith(`${pn}-`)));
+        if (patternProvider && patternProvider[0] !== name) {
+          console.warn(
+            `⚠️  provider "${name}" model "${modelId}" is unreachable by that bare name — ` +
+            `a hardcoded prefix pattern routes it to provider "${patternProvider[0]}" first. ` +
+            `Use "${name}/${modelId}" instead to route to "${name}".`,
+          );
+        }
       }
     }
   }

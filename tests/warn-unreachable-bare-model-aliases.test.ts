@@ -68,3 +68,36 @@ test("does not warn about the native openai provider's own defaultModel", () => 
   }));
   expect(warnings.length).toBe(0);
 });
+
+test("warns when a provider's models[] entry collides with the hardcoded prefix-pattern table (claude- -> a literal \"anthropic\" provider)", () => {
+  const warnings = warnCapturing(configFor({
+    anthropic: { adapter: "anthropic", baseUrl: "https://api.anthropic.com" } as OcxProviderConfig,
+    cursor: { adapter: "cursor", baseUrl: "https://api2.cursor.sh", models: ["claude-4-sonnet", "composer-1"] } as OcxProviderConfig,
+  }));
+  expect(warnings.length).toBe(1);
+  expect(warnings[0]).toContain('provider "cursor"');
+  expect(warnings[0]).toContain('"claude-4-sonnet"');
+  expect(warnings[0]).toContain("cursor/claude-4-sonnet");
+});
+
+test("does not warn about the pattern table when the pattern's own named provider lists the model itself", () => {
+  const warnings = warnCapturing(configFor({
+    anthropic: { adapter: "anthropic", baseUrl: "https://api.anthropic.com", models: ["claude-4-sonnet"] } as OcxProviderConfig,
+  }));
+  expect(warnings.length).toBe(0);
+});
+
+test("does not warn about the pattern table when no provider name matches the pattern's providerNames", () => {
+  const warnings = warnCapturing(configFor({
+    cursor: { adapter: "cursor", baseUrl: "https://api2.cursor.sh", models: ["claude-4-sonnet"] } as OcxProviderConfig,
+  }));
+  expect(warnings.length).toBe(0);
+});
+
+test("does not warn about the pattern table when the colliding model is already the pattern-provider's defaultModel", () => {
+  const warnings = warnCapturing(configFor({
+    anthropic: { adapter: "anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-4-sonnet" } as OcxProviderConfig,
+    cursor: { adapter: "cursor", baseUrl: "https://api2.cursor.sh", models: ["claude-4-sonnet"] } as OcxProviderConfig,
+  }));
+  expect(warnings.length).toBe(0);
+});
