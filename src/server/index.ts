@@ -24,6 +24,7 @@ import { runOpenAiTierStartupMigration } from "../providers/openai-tier-startup"
 import { runAlibabaRegionStartupMigration } from "../providers/alibaba-region-startup";
 import { isCanonicalOpenAiForwardProvider } from "../providers/openai-tiers";
 import { providerCodexAccountMode } from "../providers/registry";
+import { warnUnreachableBareModelAliases } from "../router";
 import {
   CodexAccountCooldownError,
   cooldownErrorMessage,
@@ -282,6 +283,7 @@ export function startServer(port?: number) {
   // purpose: a lazy "arm on first save" loses exactly the hand edit made before that
   // first save, which is the case the guard exists for.
   armClaudeCodeBaseline(config);
+  warnUnreachableBareModelAliases(config);
   // usage.jsonl already persists every request; rehydrate the in-memory Logs ring so
   // /api/logs (and the GUI) survive `ocx stop` / `ocx start` process restarts.
   hydrateRequestLogsFromDisk();
