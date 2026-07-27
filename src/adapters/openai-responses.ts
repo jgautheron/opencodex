@@ -719,7 +719,16 @@ export function createResponsesPassthroughAdapter(provider: OcxProviderConfig): 
         outBody = stripUnsupportedForwardParams(outBody);
       }
       else outBody = stripConflictingHostedTools(outBody);
-      if (forward || parsed._previousResponseInputExpanded === true) {
+      // Claude Code's Messages API never sets previousResponseId at all, so on a
+      // custom apiKey-auth provider (non-forward) the original forward-only guard
+      // never fired, and long tool-chains hit "Invalid 'input[N].call_id': string
+      // too long" (call_id replay can exceed the Responses API's 64-char limit).
+      // !unexpandedMiss is a safe superset of the old condition: it still covers
+      // forward mode and already-expanded replays, but also covers any request with
+      // no previousResponseId at all (every Claude-surfaced request) — while still
+      // excluding the one genuinely risky case, a raw unexpanded native-Codex
+      // continuation that might reference call ids stored upstream.
+      if (!unexpandedMiss) {
         outBody = repairOversizedReplayCallIds(outBody);
       }
       outBody = stripUnsupportedReasoningSummaryDelivery(outBody, parsed.modelId);
