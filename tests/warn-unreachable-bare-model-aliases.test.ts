@@ -21,12 +21,12 @@ function warnCapturing(config: OcxConfig): string[] {
 test("warns when another active provider's defaultModel collides with a bare gpt- id, and native openai is configured", () => {
   const warnings = warnCapturing(configFor({
     openai: { adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex" } as OcxProviderConfig,
-    phantomOpenai: { adapter: "openai-responses", baseUrl: "https://example.internal/openai", defaultModel: "gpt-5.6-sol" } as OcxProviderConfig,
+    acmeOpenai: { adapter: "openai-responses", baseUrl: "https://example.internal/openai", defaultModel: "gpt-5.6-sol" } as OcxProviderConfig,
   }));
   expect(warnings.length).toBe(1);
-  expect(warnings[0]).toContain('provider "phantomOpenai"');
+  expect(warnings[0]).toContain('provider "acmeOpenai"');
   expect(warnings[0]).toContain('"gpt-5.6-sol"');
-  expect(warnings[0]).toContain("phantomOpenai/gpt-5.6-sol");
+  expect(warnings[0]).toContain("acmeOpenai/gpt-5.6-sol");
 });
 
 test("warns for every colliding entry in a provider's models[] array", () => {
@@ -42,14 +42,14 @@ test("warns for every colliding entry in a provider's models[] array", () => {
 test("does not warn when the colliding model is already qualified with a provider prefix", () => {
   const warnings = warnCapturing(configFor({
     openai: { adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex" } as OcxProviderConfig,
-    phantomOpenai: { adapter: "openai-responses", baseUrl: "https://example.internal/openai", defaultModel: "phantomOpenai/gpt-5.6-sol" } as OcxProviderConfig,
+    acmeOpenai: { adapter: "openai-responses", baseUrl: "https://example.internal/openai", defaultModel: "acmeOpenai/gpt-5.6-sol" } as OcxProviderConfig,
   }));
   expect(warnings.length).toBe(0);
 });
 
 test("does not warn when no native openai provider is configured at all", () => {
   const warnings = warnCapturing(configFor({
-    phantomOpenai: { adapter: "openai-responses", baseUrl: "https://example.internal/openai", defaultModel: "gpt-5.6-sol" } as OcxProviderConfig,
+    acmeOpenai: { adapter: "openai-responses", baseUrl: "https://example.internal/openai", defaultModel: "gpt-5.6-sol" } as OcxProviderConfig,
   }));
   expect(warnings.length).toBe(0);
 });
@@ -57,7 +57,7 @@ test("does not warn when no native openai provider is configured at all", () => 
 test("does not warn when the native openai provider itself is disabled", () => {
   const warnings = warnCapturing(configFor({
     openai: { adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex", disabled: true } as OcxProviderConfig,
-    phantomOpenai: { adapter: "openai-responses", baseUrl: "https://example.internal/openai", defaultModel: "gpt-5.6-sol" } as OcxProviderConfig,
+    acmeOpenai: { adapter: "openai-responses", baseUrl: "https://example.internal/openai", defaultModel: "gpt-5.6-sol" } as OcxProviderConfig,
   }));
   expect(warnings.length).toBe(0);
 });
