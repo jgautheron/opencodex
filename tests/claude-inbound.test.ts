@@ -64,7 +64,8 @@ describe("claude inbound translation", () => {
     expect(body.top_k).toBeUndefined(); // documented drop
     expect(body.stop).toEqual(["STOP"]);
     expect(body.user).toBe("user-abc");
-    // Stable per-session cache-affinity key derived from metadata.user_id (devlog 090)
+    // Stable cache-affinity key — content-derived when system content is present
+    // (devlog 260727 subagent-cache-audit), falling back to metadata.user_id otherwise.
     expect(body.prompt_cache_key).toMatch(/^[0-9a-f]{32}$/);
     expect(body.store).toBe(false);
     expect(body.stream).toBe(true);
@@ -200,10 +201,24 @@ describe("claude inbound translation", () => {
 describe("prompt cache key provenance (devlog 130 B3)", () => {
   const messages = [{ role: "user", content: "hi" }];
 
-  test("metadata.user_id wins: key derived from it, source=metadata", () => {
+  test("system wins over metadata.user_id when both are present, source=system (devlog 260727 subagent-cache-audit)", () => {
+    // Was "metadata.user_id wins" (devlog 130 B3): a session-scoped key meant every NEW
+    // Claude Code session got a fresh key even for byte-identical system+tools content —
+    // a guaranteed cold rewrite on the first call of every session. Content-first lets any
+    // session hit a cache any other session already warmed; metadata is now the fallback
+    // used only when there's no system content to fingerprint.
     const { body, cacheKeySource } = anthropicToResponsesTranslation({
       model: "m", max_tokens: 1, messages,
       system: "be nice",
+      metadata: { user_id: "user-abc" },
+    });
+    expect(cacheKeySource).toBe("system");
+    expect(body.prompt_cache_key).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  test("metadata.user_id is the fallback when there's no system content to fingerprint, source=metadata", () => {
+    const { body, cacheKeySource } = anthropicToResponsesTranslation({
+      model: "m", max_tokens: 1, messages,
       metadata: { user_id: "user-abc" },
     });
     expect(cacheKeySource).toBe("metadata");
