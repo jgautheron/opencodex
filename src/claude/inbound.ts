@@ -446,13 +446,13 @@ export function anthropicToResponsesTranslation(raw: unknown, cc?: OcxClaudeCode
   }
   // OpenAI-side prompt caching is routed by prompt_cache_key, not pure byte-prefix
   // matching (Codex clients send their session id; without any key, consecutive
-  // /v1/messages turns reported cached_tokens: 0 on the ChatGPT backend — devlog 090).
+  // /v1/messages turns reported cached_tokens: 0 on the ChatGPT backend).
   //
-  // Content-first (devlog 260727 subagent-cache-audit): fingerprint what the upstream
-  // actually receives — resolved model, post-translation system, and the FULL translated
-  // tool definitions in WIRE ORDER (sorting the hash while sending a different order
-  // would break the key<->prefix correspondence). canonical JSON (recursive key sort) +
-  // a version field so future normalization changes never mix cohorts.
+  // Content-first: fingerprint what the upstream actually receives — resolved model,
+  // post-translation system, and the FULL translated tool definitions in WIRE ORDER
+  // (sorting the hash while sending a different order would break the key<->prefix
+  // correspondence). Canonical JSON (recursive key sort) + a version field so future
+  // normalization changes never mix cohorts.
   //
   // Deliberately preferred over metadata.user_id (Claude Code's session uuid) even
   // when present: a session-scoped key means every NEW Claude Code session gets a
@@ -460,12 +460,12 @@ export function anthropicToResponsesTranslation(raw: unknown, cc?: OcxClaudeCode
   // byte-identical system+tools content — this is a guaranteed cold rewrite on the
   // first call of every session, not just cross-session drift. Content-based keying
   // lets any session hit a cache any other session already warmed. Session-only keys
-  // were originally chosen because pure-content keying herded many different
-  // sessions/models/toolsets onto one key, burning OpenAI's ~15 RPM per-key routing
-  // budget (audit R1#4/R2#5/R1#10) at multi-tenant scale; that risk is far smaller for
-  // a single-operator deployment where the actual pain is inter-session cache misses.
-  // Exact-prefix matching still isolates content; the key only steers routing affinity.
-  // Callers must NOT synthesize a session_id header from this fallback (audit 133 R2#3).
+  // were originally chosen because pure-content keying herds many different
+  // sessions/models/toolsets onto one key, burning OpenAI's per-key routing budget at
+  // multi-tenant scale; that risk is far smaller for a single-operator deployment
+  // where the actual pain is inter-session cache misses. Exact-prefix matching still
+  // isolates content; the key only steers routing affinity. Callers must NOT
+  // synthesize a session_id header from this fallback.
   if (systemParts.length > 0) {
     body.prompt_cache_key = createHash("sha256")
       .update(canonicalJson({
@@ -477,8 +477,8 @@ export function anthropicToResponsesTranslation(raw: unknown, cc?: OcxClaudeCode
       .digest("hex").slice(0, 32);
     cacheKeySource = "system";
   } else if (isRec(raw.metadata) && typeof raw.metadata.user_id === "string") {
-    // No system content to fingerprint (H1, devlog 130): fall back to the session-scoped
-    // key so the request still gets SOME key rather than none.
+    // No system content to fingerprint: fall back to the session-scoped key so the
+    // request still gets SOME key rather than none.
     body.prompt_cache_key = createHash("sha256").update(raw.metadata.user_id).digest("hex").slice(0, 32);
     cacheKeySource = "metadata";
   }
