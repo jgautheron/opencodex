@@ -4,7 +4,7 @@ description: ~/.opencodex/config.json のすべてのフィールド — 最上�
 ---
 
 opencodex は `~/.opencodex/config.json` から設定を読みます。`ocx init` とダッシュボードがこのファイルを
-書きますが、直接編集しても構いません。プロキシは起動時に再読み込みします。途切れた、または正しい JSON でないなど
+書きますが、直接編集しても構いません。プロキシは起動時に再読み込みします。**サービス稼働中は、手編集の前にプロキシを止めるかダッシュボード/管理 API を使ってください。** 実行中プロセスは設定をメモリに保持し、途中の保存でディスクを上書きし得ます。v2.7.41 以降、手編集した `claudeCode` サブツリーはそれらの保存でも保持されます。他のキー（例: `providers`）は依然として失われることがあります。途切れた、または正しい JSON でないなど
 ファイルをパースできない場合は `config.json.invalid-<timestamp>` にバックアップし、コンソールに警告したのちデフォルト値で
 起動します。ファイルがなくてもデフォルト設定（単一の `openai` forward プロバイダー）を使います。
 
@@ -150,6 +150,7 @@ token の代わりに使えます。すべての候補は timing side channel �
 | `reasoningEfforts?` | `string[]` | 公表・送信するプロバイダー単位の Codex reasoning ラベル（`low`、`medium`、`high`、`xhigh`、`max`、`ultra`）。 |
 | `modelReasoningEfforts?` | `Record<string,string[]>` | モデル別 reasoning ラベル。空配列はそのモデルの effort control を隠します。 |
 | `modelSupportsReasoningSummaries?` | `Record<string,boolean>` | モデル別 reasoning summary capability。`false` にすると summary 対応を広告せず、`openai-responses` リクエスト前に summary-delivery フィールドを除去します。 |
+| `modelReasoningSummaryDelivery?` | `Record<string,"sequential" \| "sequential_cutoff" \| "concurrent" \| "concurrent_cutoff">` | モデル別の Responses delivery enum。設定したモデルは summary 対応を維持し、既存の `stream_options.reasoning_summary_delivery` だけを書き換えます。同じモデルの summary capability を `false` にはできません。 |
 | `reasoningEffortMap?` | `Record<string,string>` | プロバイダー単位の reasoning ラベル wire alias。上流が別の値を要求するときだけ使います。 |
 | `modelReasoningEffortMap?` | `Record<string,Record<string,string>>` | モデル別 reasoning ラベル wire alias。 |
 | `noReasoningModels?` | `string[]` | reasoning/thinking パラメータを拒否するモデル。アダプターが `reasoning_effort` を削除します。 |

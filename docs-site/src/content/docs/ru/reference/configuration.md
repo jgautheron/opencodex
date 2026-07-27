@@ -4,7 +4,7 @@ description: Все поля ~/.opencodex/config.json — параметры в�
 ---
 
 opencodex настраивается файлом `~/.opencodex/config.json`. Его записывают `ocx init` и дашборд,
-но вы можете редактировать его и напрямую; прокси перечитывает его при запуске. Если файл не
+но вы можете редактировать его и напрямую; прокси перечитывает его при запуске. **Пока сервис запущен, лучше остановить прокси или править через панель/API:** процесс держит конфиг в памяти, и любое сохранение на лету может перезаписать файл. С v2.7.41 ручные правки поддерева `claudeCode` сохраняются при таких записях; другие ключи (например, `providers`) всё ещё могут быть потеряны. Если файл не
 удаётся распарсить (например, он усечён или содержит некорректный JSON), opencodex создаёт
 резервную копию `config.json.invalid-<timestamp>`, печатает предупреждение в консоль и стартует с
 настройками по умолчанию. При отсутствии файла также используется конфигурация по умолчанию
@@ -174,6 +174,7 @@ x-opencodex-api-key: your-secret-token
 | `reasoningEfforts?` | `string[]` | Метки рассуждений Codex на уровне провайдера, которые объявляются и отправляются (`low`, `medium`, `high`, `xhigh`, `max`, `ultra`). |
 | `modelReasoningEfforts?` | `Record<string,string[]>` | Метки рассуждений для конкретных моделей. Пустой список скрывает управление уровнем рассуждений для этой модели. |
 | `modelSupportsReasoningSummaries?` | `Record<string,boolean>` | Поддержка reasoning summary для отдельных моделей. Значение `false` отключает объявление summary и удаляет поля summary-delivery перед запросом `openai-responses`. |
+| `modelReasoningSummaryDelivery?` | `Record<string,"sequential" \| "sequential_cutoff" \| "concurrent" \| "concurrent_cutoff">` | Enum доставки Responses для отдельных моделей. Настроенная модель сохраняет поддержку summary, а адаптер меняет только уже существующее `stream_options.reasoning_summary_delivery`. Нельзя одновременно отключить summary для той же модели. |
 | `reasoningEffortMap?` | `Record<string,string>` | Wire-алиасы меток рассуждений на уровне провайдера. Используйте только когда вышестоящая сторона ожидает другое значение. |
 | `modelReasoningEffortMap?` | `Record<string,Record<string,string>>` | Wire-алиасы меток рассуждений для конкретных моделей. |
 | `noReasoningModels?` | `string[]` | Модели, отклоняющие параметр reasoning/thinking — адаптер удаляет для них `reasoning_effort`. |

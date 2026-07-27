@@ -27,6 +27,7 @@ import {
 } from "../../combos";
 import { isInjectionDebugEnabled } from "../../lib/debug-settings";
 import { injectionDebugLog } from "../../lib/injection-debug-log";
+import { resolveClientRetryAfter } from "../../lib/retry-after";
 import { modelInList, namespacedToolName } from "../../types";
 import type { AdapterEvent, OcxConfig, OcxParsedRequest, OcxProviderConfig, OcxProviderContinuationState, OcxUsage } from "../../types";
 import {
@@ -92,11 +93,18 @@ import {
   inspectResponseLogJson,
   noteAttemptSend,
   readConfiguredCodexServiceTier,
+  recordAdapterReasoning,
+  recordAttemptRequestedEffort,
   requestLogSpeedLabel,
   sealRequestAttemptIdentity,
   usageFromResponsesPayload,
   type RequestLogContext,
 } from "../request-log";
+import {
+  conversationIdFromResponsesRequest,
+  normalizeLogConversationId,
+  sessionIdHeaderFromRequest,
+} from "../request-log-conversation";
 import type { AttemptRecoveryKind } from "../../usage/log";
 import {
   consumeForInspection,
@@ -347,14 +355,30 @@ export async function consumeComboFailure(
   const message = classificationText === fallback
     ? fallback
     : `${fallback}: ${classificationText}`;
-  const retryAfter = sanitizedRetryAfter(response.headers.get("retry-after"), now);
+  const upstreamRetryAfter = response.headers.get("retry-after");
+  // Client response may get the synthetic "2" fallback; cooldown metadata must not —
+  // otherwise coolComboTarget treats it as a 2s cooldown instead of the 60s default.
+  const clientRetryAfter = resolveClientRetryAfter({
+    status: response.status,
+    message,
+    upstreamRetryAfter,
+    now,
+  });
+  const cooldownRetryAfter = resolveClientRetryAfter({
+    status: response.status,
+    message,
+    upstreamRetryAfter,
+    now,
+    includeDefault: false,
+  });
   return {
     response: formatErrorResponse(response.status, "upstream_error", message, {
       ...(upstreamCode !== undefined ? { code: upstreamCode } : {}),
+      ...(clientRetryAfter !== undefined ? { retryAfter: clientRetryAfter } : {}),
     }),
     classificationText,
     ...(upstreamCode !== undefined ? { upstreamCode } : {}),
-    ...(retryAfter !== undefined ? { retryAfter } : {}),
+    ...(cooldownRetryAfter !== undefined ? { retryAfter: cooldownRetryAfter } : {}),
     ...(usage ? { usage } : {}),
   };
 }
@@ -593,6 +617,7 @@ async function applyFinalRouteRequestNormalization(args: {
       logCtx.requestedEffort = `${logCtx.requestedEffort ?? "max"}->${clamped}`;
     }
   }
+  recordAttemptRequestedEffort(logCtx);
   logCtx.modelSupportsServiceTier = catalogModelSupportsServiceTier(
     route.modelId,
     logCtx.requestedServiceTier ?? logCtx.configuredServiceTier,
@@ -622,6 +647,19 @@ export async function handleComboResponses(
   if (!combo) {
     return formatErrorResponse(404, "invalid_request_error", `Unknown combo: ${comboId}`);
   }
+  const adoptFailedChildLog = (childLog: RequestLogContext): void => {
+    // Attempts remain the complete physical history; the logical row mirrors the most recent
+    // failed target so an exhausted combo still has useful top-level reasoning diagnostics.
+    Object.assign(logCtx, childLog, {
+      requestedModel,
+      model: requestedModel,
+      provider: "combo",
+      comboId,
+      attempts: logCtx.attempts,
+      activeAttempt: undefined,
+      activeAttemptStartedAt: undefined,
+    });
+  };
 
   const unreadableEncryptedAgentTask = hasUnreadableEncryptedAgentTask(
     (rawBody as { input?: unknown } | undefined)?.input,
@@ -658,6 +696,8 @@ export async function handleComboResponses(
     const childLog: RequestLogContext = {
       model: pick.target.model,
       provider: pick.target.provider,
+      ...(logCtx.conversationId ? { conversationId: logCtx.conversationId } : {}),
+      ...(logCtx.surface ? { surface: logCtx.surface } : {}),
     };
     const targetRoute = routeModel(config, `${pick.target.provider}/${pick.target.model}`);
     const childBody = concreteComboRequestBody(
@@ -792,25 +832,19 @@ export async function handleComboResponses(
     if (comboFailureDecision(failure.response.status, failure.classificationText, {
       code: failure.upstreamCode,
     }) === "stop") {
-      Object.assign(logCtx, childLog, {
-        requestedModel,
-        model: requestedModel,
-        provider: "combo",
-        comboId,
-        attempts: logCtx.attempts,
-        activeAttempt: undefined,
-        activeAttemptStartedAt: undefined,
-      });
+      adoptFailedChildLog(childLog);
       return lastFailure;
     }
     console.warn(
       `[combo] ${comboId}: ${targetKey(pick.target)} failed with ${response.status} after ${Date.now() - started}ms`,
     );
-    pick = advanceComboAfterFailure(config, pick, {
+    const nextPick = advanceComboAfterFailure(config, pick, {
       retryAfter: failure.retryAfter,
       now: Date.now(),
       eligible: payloadEligible,
     });
+    if (!nextPick) adoptFailedChildLog(childLog);
+    pick = nextPick;
   }
   return lastFailure!;
 }
@@ -865,6 +899,16 @@ export async function handleResponses(
     if (clientThreadId) parsed._clientThreadId = clientThreadId;
   } catch (err) {
     return formatErrorResponse(400, "invalid_request_error", err instanceof Error ? err.message : String(err));
+  }
+  // Prefer a pre-populated id (routed Claude) over Responses headers that may be
+  // absent or synthetically injected (session_id from prompt_cache_key).
+  if (!logCtx.conversationId) {
+    logCtx.conversationId = conversationIdFromResponsesRequest({
+      clientThreadId: parsed._clientThreadId,
+      sessionIdHeader: sessionIdHeaderFromRequest(req.headers),
+      threadIdHeader: req.headers.get("thread-id"),
+      cursorConversationId: parsed._cursorConversationId,
+    });
   }
   logCtx.requestedModel = parsed.modelId;
   logCtx.requestedEffort = parsed.options.reasoning;
@@ -1124,6 +1168,7 @@ export async function handleResponses(
       );
     }
     let request = await adapter.buildRequest(parsed, { headers: selectedForwardHeaders });
+    recordAdapterReasoning(logCtx, request);
     const passthroughEstimate = typeof request.usageLog?.inputTokens === "number"
       ? request.usageLog.inputTokens
       : undefined;
@@ -1213,6 +1258,7 @@ export async function handleResponses(
           config.cacheRetention,
         );
         request = await retryAdapter.buildRequest(parsed, { headers: retryHeaders });
+        recordAdapterReasoning(logCtx, request);
 
         await upstreamResponse.body?.cancel().catch(() => undefined);
         authCtx = retryAuthCtx;
@@ -1500,6 +1546,11 @@ export async function handleResponses(
           message: err instanceof Error ? err.message : String(err),
         });
       } finally {
+        // Cursor assigns a stable conversation id inside runTurn on the first headerless
+        // turn; backfill so Logs can filter/total that opening request (#330 / #522).
+        if (!logCtx.conversationId && parsed._cursorConversationId) {
+          logCtx.conversationId = normalizeLogConversationId(parsed._cursorConversationId);
+        }
         queue.close();
       }
     };
@@ -1614,6 +1665,7 @@ export async function handleResponses(
       forceEmptyResponseId: true,
       abortSignal: options.abortSignal,
       ...(options.onFirstOutput ? { onFirstOutput: options.onFirstOutput } : {}),
+      onRequestBuilt: request => recordAdapterReasoning(logCtx, request),
       onUsage: usage => {
         logCtx.usageFromBridge = true;
         if (usage) {
@@ -1658,6 +1710,7 @@ export async function handleResponses(
   let activeAdapter = adapter;
 
   const request = await activeAdapter.buildRequest(parsed, { headers: selectedForwardHeaders });
+  recordAdapterReasoning(logCtx, request);
   const inputTokenEstimate = typeof request.usageLog?.inputTokens === "number"
     ? request.usageLog.inputTokens
     : undefined;
@@ -1710,6 +1763,7 @@ export async function handleResponses(
         headers: selectedForwardHeaders,
         ...(imageTierBias > 0 ? { imageTierBias } : {}),
       });
+      recordAdapterReasoning(logCtx, retryRequest);
       const retryEstimate = typeof retryRequest.usageLog?.inputTokens === "number"
         ? retryRequest.usageLog.inputTokens
         : undefined;
@@ -1830,7 +1884,15 @@ export async function handleResponses(
       );
       // Upstreams occasionally echo request details in error bodies — scrub token-shaped
       // material before it reaches the client-facing error surface.
-      return formatErrorResponse(upstreamResponse.status, "upstream_error", `Provider error ${upstreamResponse.status}: ${redactSecretString(errorText.slice(0, 500))}`);
+      const message = `Provider error ${upstreamResponse.status}: ${redactSecretString(errorText.slice(0, 500))}`;
+      const retryAfter = resolveClientRetryAfter({
+        status: upstreamResponse.status,
+        message,
+        upstreamRetryAfter: upstreamResponse.headers.get("retry-after"),
+      });
+      return formatErrorResponse(upstreamResponse.status, "upstream_error", message, {
+        ...(retryAfter !== undefined ? { retryAfter } : {}),
+      });
     }
   }
 
@@ -1850,6 +1912,7 @@ export async function handleResponses(
           headers: selectedForwardHeaders,
           ...(imageTierBias > 0 ? { imageTierBias } : {}),
         });
+        recordAdapterReasoning(logCtx, continuationRequest);
         const continuationEstimate = typeof continuationRequest.usageLog?.inputTokens === "number"
           ? continuationRequest.usageLog.inputTokens
           : undefined;

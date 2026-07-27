@@ -4,7 +4,7 @@ description: ~/.opencodex/config.json의 모든 필드 — 최상위 옵션, 프
 ---
 
 opencodex는 `~/.opencodex/config.json`에서 설정을 읽습니다. `ocx init`과 대시보드가 이 파일을
-쓰지만 직접 편집해도 됩니다. 프록시는 시작할 때 다시 읽습니다. 잘렸거나 올바른 JSON이 아닌 등
+쓰지만 직접 편집해도 됩니다. 프록시는 시작할 때 다시 읽습니다. **서비스가 실행 중일 때는 직접 고치기 전에 프록시를 멈추거나 대시보드/관리 API를 쓰세요.** 실행 중인 프로세스는 설정을 메모리에 두고, 중간에 저장하면 디스크를 덮어쓸 수 있습니다. v2.7.41부터 손수 수정한 `claudeCode` 하위 트리는 그런 저장에서도 유지됩니다. 다른 키(예: `providers`)는 여전히 덮어써질 수 있습니다. 잘렸거나 올바른 JSON이 아닌 등
 파일을 파싱할 수 없으면 `config.json.invalid-<timestamp>`로 백업하고 콘솔에 경고한 뒤 기본값으로
 시작합니다. 파일이 없어도 기본 설정(단일 `openai` forward 프로바이더)을 사용합니다.
 
@@ -155,6 +155,7 @@ token 대신 쓸 수 있습니다. 모든 후보는 timing side channel을 막�
 | `reasoningEfforts?` | `string[]` | 알리고 전송할 프로바이더 단위 Codex reasoning 레이블(`low`, `medium`, `high`, `xhigh`, `max`, `ultra`). |
 | `modelReasoningEfforts?` | `Record<string,string[]>` | 모델별 reasoning 레이블. 빈 배열은 해당 모델의 effort control을 숨깁니다. |
 | `modelSupportsReasoningSummaries?` | `Record<string,boolean>` | 모델별 reasoning summary capability. 모델 값을 `false`로 두면 summary 지원을 알리지 않고 `openai-responses` 요청 전에 summary-delivery 필드를 제거합니다. |
+| `modelReasoningSummaryDelivery?` | `Record<string,"sequential" \| "sequential_cutoff" \| "concurrent" \| "concurrent_cutoff">` | 모델별 Responses delivery enum입니다. 설정된 모델은 summary 지원을 유지하며 기존 `stream_options.reasoning_summary_delivery` 값만 바꿉니다. 같은 모델의 summary capability를 `false`로 설정할 수 없습니다. |
 | `modelAdapters?` | `Record<string,string>` | 여러 wire를 쓰는 모델이 한 게이트웨이에 섞여 있을 때의 모델별 wire 지정. 키는 upstream native 모델 ID이고 값은 `openai-chat` 또는 `openai-responses`만 허용합니다. `web_search` 같은 hosted tool 때문에 한 모델만 Responses API가 필요할 때 씁니다. upstream이 wire를 고정한 모델과 canonical ChatGPT forward provider에서는 override가 거부됩니다. |
 | `reasoningEffortMap?` | `Record<string,string>` | 프로바이더 단위 reasoning 레이블 wire alias. 업스트림이 다른 값을 요구할 때만 사용합니다. |
 | `modelReasoningEffortMap?` | `Record<string,Record<string,string>>` | 모델별 reasoning 레이블 wire alias. |

@@ -4,10 +4,13 @@ description: Every field in ~/.opencodex/config.json — top-level options, prov
 ---
 
 opencodex is configured by `~/.opencodex/config.json`. It's written by `ocx init` and the dashboard,
-but you can edit it directly; the proxy reloads it on start. If the file cannot be parsed (e.g.
-truncated or invalid JSON), opencodex backs it up to `config.json.invalid-<timestamp>`, prints a
-console warning, and starts with defaults. Missing files also fall back to a default (a single
-`openai` forward provider).
+but you can edit it directly; the proxy reloads it on start. **Prefer stopping the proxy (or using the
+dashboard / management API) before hand-editing** while a service is running: the live process keeps
+config in memory and any mid-run save can rewrite the file from that snapshot. Since v2.7.41, hand
+edits to the `claudeCode` subtree are preserved across those saves; other keys (for example
+`providers`) can still be overwritten. If the file cannot be parsed (e.g. truncated or invalid JSON),
+opencodex backs it up to `config.json.invalid-<timestamp>`, prints a console warning, and starts with
+defaults. Missing files also fall back to a default (a single `openai` forward provider).
 
 ## Reserved OpenAI providers
 
@@ -39,7 +42,7 @@ differing backup and rewrites known legacy namespaced selected ids to bare ids.
 | `subagentEffortCap?` | `string` | — | The same hard ceiling, applied only to spawned-child turns identified by codex-rs markers matched exactly: `x-openai-subagent: collab_spawn` or `"subagent_kind": "thread_spawn"` in `x-codex-turn-metadata`. Other internal sub-agent categories (review, compaction, memory consolidation) never trip this cap, and `multiAgentMode: "v1"` disables it entirely. Accepts `low` through `ultra`; when both caps are set, the lower one wins, and caps only lower, never raise. Snaps down to the highest supported rung at or below the cap. If the model exposes no effort control, or no supported rung fits under the cap, the effort field is removed and the provider default applies. `max` and `ultra` are accepted but do not impose a lower rank ceiling (requests arrive as `low` through `max` after the client's `ultra` → `max` conversion), though known model ladders may still cause snap-down or strip. The Dashboard picker offers `low` through `xhigh`. Managed via `GET /api/effort-caps` and `PUT /api/effort-caps`. |
 | `injectionPrompt?` | `string` | — | Custom override for the injected v2 guidance body. Replaces the built-in text; `{{model}}`, `{{effort}}`, and `{{roster}}` placeholders are substituted. Firing gates are unchanged. Settable via `PUT /api/injection-model` (`prompt` key). |
 | `multiAgentGuidanceEnabled?` | `boolean` | `true` | Controls only OpenCodex-authored multi-agent developer guidance. Unset/`true` preserves v1/v2 guidance; `false` suppresses both without changing the collaboration surface, `subagentModels`, routing, or effort caps. `GET/PUT /api/injection-model` exposes the effective value; PUT is a partial update. |
-| `disabledModels?` | `string[]` | — | Models hidden from Codex. Routed `provider/model` ids are excluded from the catalog and `/v1/models`; bare native GPT slugs (e.g. `gpt-5.4`) flip their catalog entry to `visibility: "hide"` and drop from the bare `/v1/models` list. Toggleable per model from the dashboard Models page. |
+| `disabledModels?` | `string[]` | — | Models **hidden** from Codex's catalog and `/v1/models` (not blocked at the proxy). Routed `provider/model` ids are excluded from listings; bare native GPT slugs (e.g. `gpt-5.4`) flip their catalog entry to `visibility: "hide"` and drop from the bare `/v1/models` list. Exact model ids remain directly callable. Toggleable per model from the dashboard Models page. |
 | `multiAgentMode?` | `"v1" \| "default" \| "v2"` | `"default"` | 3-state multi-agent surface override. `"v1"` forces all models to the v1 surface (overrides upstream pins); `"default"` respects upstream model pins (sol/terra=v2, luna=v1); `"v2"` forces all models to v2. Settable from the dashboard Models page or `ocx v2 mode`. |
 | `providerContextCaps?` | `Record<string,number>` | `{}` | Per-provider Codex-visible context caps. A cap only lowers known context windows. |
 | `contextCapValue?` | `number` | `350000` | Value used by the dashboard's context-cap controls; changing it updates every enabled entry in `providerContextCaps`. |
@@ -66,6 +69,26 @@ differing backup and rewrites known legacy namespaced selected ids to bare ids.
 `config.json` key. `ocx v2 threads <n>` persists the corresponding
 `max_concurrent_threads_per_session` value under `[features.multi_agent_v2]` in Codex's
 `$CODEX_HOME/config.toml`; enable v2 first so that table exists.
+
+## Combos (`config.combos`)
+
+Failover / round-robin aliases live under `combos.<id>` with `targets` (provider + model), optional
+`strategy`, `alias`, and `defaultEffort`. A combo is always routable by `combo/<id>` or its alias
+when requested explicitly.
+
+Catalog listing is stricter. `ocx sync`, `/v1/models`, and Codex's model picker only include a combo
+when **every** target has discoverable capabilities that can be intersected:
+
+- a positive `contextWindow` (from live `/models`, registry hints, or provider
+  `modelContextWindows` / `contextWindow`)
+- a non-empty `inputModalities` intersection (defaults to `["text"]` when a member omits modalities)
+
+When a member is a bare relay id with no context metadata, or when members advertise **disjoint**
+`inputModalities` (empty intersection), the combo is **omitted from the catalog** even though direct
+requests still work. `ocx sync` surfaces a summary warning (and `console.warn` once per combo); the
+Combos dashboard flags it under Needs attention. Fix by setting `modelContextWindows` / matching
+modalities on the relay provider, or by pointing targets at models that already advertise compatible
+fields.
 
 If an older development build already ran `syncResumeHistory` before backup support existed, you can
 also force the same native-provider recovery with `ocx recover-history --legacy-openai`.
@@ -172,6 +195,7 @@ network. Only do this on trusted networks, and always set a strong `OPENCODEX_AP
 | `reasoningEfforts?` | `string[]` | Provider-wide Codex reasoning labels to advertise and send (`low`, `medium`, `high`, `xhigh`, `max`, `ultra`). |
 | `modelReasoningEfforts?` | `Record<string,string[]>` | Model-specific reasoning labels. An empty list hides the effort control for that model. |
 | `modelSupportsReasoningSummaries?` | `Record<string,boolean>` | Model-specific reasoning-summary capability. Set a model to `false` to stop advertising summaries and strip summary-delivery fields before an `openai-responses` request. |
+| `modelReasoningSummaryDelivery?` | `Record<string,"sequential" \| "sequential_cutoff" \| "concurrent" \| "concurrent_cutoff">` | Model-specific Responses delivery enum. A configured model stays summary-capable and only an existing `stream_options.reasoning_summary_delivery` is rewritten; do not combine it with a `false` summary capability for the same model. |
 | `modelAdapters?` | `Record<string,string>` | Per-model wire override for a gateway that fronts models speaking different wires. Keys are upstream native model ids; values must be `openai-chat` or `openai-responses`. Useful when one model needs the Responses API for hosted tools such as `web_search` while its siblings are fine on chat completions. Models the upstream pins to a single wire, and the canonical ChatGPT forward provider, reject overrides. |
 | `reasoningEffortMap?` | `Record<string,string>` | Provider-wide wire aliases for reasoning labels. Use only when the upstream expects a different value. |
 | `modelReasoningEffortMap?` | `Record<string,Record<string,string>>` | Model-specific wire aliases for reasoning labels. |

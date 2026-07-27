@@ -32,7 +32,7 @@ function nativeTemplate(): Record<string, unknown> {
 const EXPECTED_KEY_PROVIDER_IDS = [
   "anthropic-apikey", "openai-apikey", "umans", "opencode-go", "neuralwatt", "openrouter", "orcarouter", "bizrouter", "groq", "google", "google-vertex", "azure-openai",
   "deepseek", "cerebras", "together", "fireworks", "firepass", "moonshot",
-  "huggingface", "nvidia", "venice", "zai", "nanogpt", "synthetic", "siliconflow", "qwen-cloud", "tencent-coding-plan",
+  "huggingface", "nvidia", "venice", "zai", "zhipu-bigmodel", "nanogpt", "synthetic", "siliconflow", "qwen-cloud", "tencent-coding-plan",
   "qianfan", "alibaba", "alibaba-token-plan", "alibaba-token-plan-intl", "parallel", "zenmux", "litellm", "ollama-cloud", "mistral",
   "minimax", "minimax-cn", "kimi-code", "opencode-zen", "vercel-ai-gateway",
   "opencode-free", "xiaomi", "kilo", "mimo-free", "cloudflare-ai-gateway", "cloudflare-workers-ai", "gitlab-duo",
@@ -721,6 +721,7 @@ describe("provider registry parity", () => {
       moonshot: "moonshot",
       minimax: "minimax",
       "minimax-cn": "minimax",
+      "zhipu-bigmodel": "zai",
     });
     expect(resolveJawcodeProvider("gemini")).toBe("google");
     expect(resolveJawcodeProvider("minimax-cn")).toBe("minimax");
@@ -808,6 +809,23 @@ describe("free-provider directory isolation", () => {
     const registryIds = new Set(PROVIDER_REGISTRY.map(entry => entry.id));
     for (const id of directoryOnlyIds) {
       expect(registryIds.has(id)).toBe(false);
+    }
+  });
+
+  test("an id shared by both lists must resolve to the same endpoint", () => {
+    // The rule above only covers `reference` rows, so a CONNECTABLE directory id could be
+    // re-registered against a different host and stay green — that is exactly what #536 proposed
+    // for `glm` (directory: api.z.ai, proposed registry: open.bigmodel.cn). routedProviderConfig()
+    // canonicalizes a saved provider onto the registry baseUrl, so the user's key would have gone
+    // to the other vendor on the next request. Sharing an id is fine; disagreeing on where it
+    // points is not.
+    const registryById = new Map(PROVIDER_REGISTRY.map(entry => [entry.id, entry]));
+    const shared = FREE_PROVIDER_DIRECTORY.filter(row => registryById.has(row.id));
+    expect(shared.length).toBeGreaterThan(0);
+
+    for (const row of shared) {
+      const registryEntry = registryById.get(row.id)!;
+      expect(`${row.id} -> ${registryEntry.baseUrl}`).toBe(`${row.id} -> ${row.baseUrl}`);
     }
   });
 

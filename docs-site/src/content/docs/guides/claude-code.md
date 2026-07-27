@@ -85,6 +85,13 @@ Import validates the complete file before saving, so an invalid file leaves the 
 unchanged. Add `--apply` to write a valid imported profile to Desktop immediately. Use `none` only
 for an empty family; every non-empty family must keep one default.
 
+Apply writes to Claude Desktop's real Electron user-data `configLibrary`: `~/Library/Application
+Support/Claude/configLibrary` on macOS, `%APPDATA%\Claude\configLibrary` on Windows, and
+`${XDG_CONFIG_HOME:-~/.config}/Claude/configLibrary` on Linux. Set
+`OPENCODEX_CLAUDE_DESKTOP_CONFIG_DIR` for an explicit library override or
+`CLAUDE_USER_DATA_DIR` for an alternate Desktop user-data root. The legacy `Claude-3p` directory is
+not read or deleted automatically.
+
 Non-Anthropic routes receive stable aliases such as `claude-opus-4-8-2026MMDD`. The date-looking
 part is a synthetic route slot, not the model's release date. Real Anthropic Claude routes keep
 their real ids. New routes default to the Opus family, but moving a route does not change the
@@ -144,6 +151,11 @@ capabilities (reasoning-effort ladder, thinking types) in the official ModelInfo
 Desktop's third-party gateway mode can offer its effort selector. Real Anthropic models keep their
 canonical ids. The synthetic 2026 date is an internal slot, not a release date. Legacy hash aliases
 and `claude-ocx-<provider>--<model>` ids from older configs still resolve.
+
+If Claude Desktop's footer picker does not change the model for an already-running 3P
+conversation, use `/model <id>` in that conversation. OpenCodex cannot observe picker state; it
+routes the model id carried by each request. Confirm the result under **Logs → requestedModel**.
+
 Models with an authoritative 1M context window get an extra `…[1m]` picker row: selecting it makes
 Claude Code account a full 1M context for that model (auto-compaction stays on) — the proxy strips
 the marker before routing.

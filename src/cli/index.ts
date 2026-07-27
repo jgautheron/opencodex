@@ -94,6 +94,21 @@ async function waitForProxy(timeoutMs = 8_000): Promise<LiveProxy | null> {
   return null;
 }
 
+/**
+ * A Grok fence sync that throws is best-effort by design — it must never block startup.
+ * Reporting nothing, however, is what lets a STALE fence survive: `~/.grok/config.toml`
+ * keeps naming whatever port the last successful sync wrote, and once that listener is
+ * gone every grok turn retries against a refused connection while our own log stays
+ * silent (2026-07-27 field report: 8 entries pinned to a dead 127.0.0.1:4179).
+ * So say what failed and name the single command that repairs it.
+ */
+function grokSyncFailureMessage(err: unknown): string {
+  const detail = err instanceof Error ? err.message : String(err);
+  return `Grok Build config sync failed: ${detail}. `
+    + "~/.grok/config.toml may still point at a previous proxy port — "
+    + "run 'ocx ensure' (or apply from the dashboard's Grok page) to repoint it.";
+}
+
 /** Argv for detached `start`, optionally hard-pinning the listen port. */
 function startArgv(port?: number): string[] {
   const args = [process.argv[1], "start"];
@@ -299,7 +314,14 @@ async function handleStart(options: { block?: boolean } = {}) {
     const r = await syncGrokConfig(port, config, config.hostname ? { hostname: config.hostname } : {});
     if (r.changed) console.log("   + Grok Build config updated (~/.grok/config.toml)");
     else if (!r.ok) console.error(`⚠️  ${r.message}`);
-  } catch { /* best-effort — grok integration must never block startup */ }
+  } catch (err) {
+    // Best-effort: grok integration must never block startup. But swallowing the error
+    // silently is how a stale fence survives unnoticed — ~/.grok/config.toml keeps
+    // pointing at whatever port the LAST successful sync wrote, and if that listener is
+    // gone every grok turn retries against a refused connection with nothing in our log
+    // to explain it. Name the failure and the one command that repairs it.
+    console.error(`⚠️  ${grokSyncFailureMessage(err)}`);
+  }
   if (options.block ?? true) {
     setInterval(() => {}, 60_000);
     await new Promise<void>(() => {});
@@ -327,7 +349,7 @@ async function handleEnsure() {
         const g = await syncGrokConfig(live.port, config, live.hostname ? { hostname: live.hostname } : {});
         if (g.changed) console.log("   + Grok Build config updated (~/.grok/config.toml)");
         else if (!g.ok) console.error(`⚠️  ${g.message}`);
-      } catch { /* best-effort */ }
+      } catch (err) { console.error(`⚠️  ${grokSyncFailureMessage(err)}`); }
       console.log(`✅ Proxy running on port ${live.port}`);
       return;
     }
@@ -354,7 +376,7 @@ async function handleEnsure() {
     const g = await syncGrokConfig(port, config, config.hostname ? { hostname: config.hostname } : {});
     if (g.changed) console.log("   + Grok Build config updated (~/.grok/config.toml)");
     else if (!g.ok) console.error(`⚠️  ${g.message}`);
-  } catch { /* best-effort */ }
+  } catch (err) { console.error(`⚠️  ${grokSyncFailureMessage(err)}`); }
   // Always sync the LIVE port: after a fallback-port start, config.port still names the
   // busy preferred port — syncing that would point Codex at a dead listener.
   await syncModelsToCodex(port).catch(e => {
@@ -666,7 +688,8 @@ function handleRecoverHistory() {
 }
 
 switch (command) {
-  case "init": {
+  case "init":
+  case "setup": {
     const { runInit } = await import("./init");
     await runInit();
     break;
@@ -895,9 +918,82 @@ switch (command) {
     process.exitCode = await cmdAccount(args.slice(1));
     break;
   }
-  case "models": {
+  case "models":
+  case "model": {
     const { handleModels } = await import("./models");
-    handleModels(args.slice(1));
+    await handleModels(args.slice(1));
+    break;
+  }
+  case "combo": {
+    const { handleComboCommand } = await import("./combo");
+    process.exitCode = await handleComboCommand(args.slice(1));
+    break;
+  }
+  case "route": {
+    if (args[1] !== "combo") {
+      console.error("Usage: ocx route combo <subcommand>");
+      process.exitCode = 2;
+      break;
+    }
+    const { handleComboCommand } = await import("./combo");
+    process.exitCode = await handleComboCommand(args.slice(2));
+    break;
+  }
+  case "agent": {
+    const { handleAgentCommand } = await import("./agent");
+    process.exitCode = await handleAgentCommand(args.slice(1));
+    break;
+  }
+  case "observe": {
+    const { handleObserveCommand } = await import("./observe");
+    process.exitCode = await handleObserveCommand(args.slice(1));
+    break;
+  }
+  case "logs":
+  case "usage":
+  case "storage":
+  case "memory": {
+    const { handleObserveCommand } = await import("./observe");
+    process.exitCode = await handleObserveCommand([command, ...args.slice(1)]);
+    break;
+  }
+  case "access": {
+    const { handleAccessCommand } = await import("./access");
+    process.exitCode = await handleAccessCommand(args.slice(1));
+    break;
+  }
+  case "api-key": {
+    const { handleAccessCommand } = await import("./access");
+    process.exitCode = await handleAccessCommand(["key", ...args.slice(1)]);
+    break;
+  }
+  case "grok": {
+    const { handleGrokCommand } = await import("./integrations");
+    process.exitCode = await handleGrokCommand(args.slice(1));
+    break;
+  }
+  case "integration": {
+    const integration = args[1];
+    if (integration === "grok") {
+      const { handleGrokCommand } = await import("./integrations");
+      process.exitCode = await handleGrokCommand(args.slice(2));
+    } else if (integration === "claude") {
+      const { handleClaudeConfigCommand } = await import("./integrations");
+      process.exitCode = await handleClaudeConfigCommand(args.slice(2));
+    } else {
+      console.error("Usage: ocx integration <claude|grok> <subcommand>");
+      process.exitCode = 2;
+    }
+    break;
+  }
+  case "system": {
+    const { handleSystemCommand } = await import("./system-command");
+    process.exitCode = await handleSystemCommand(args.slice(1));
+    break;
+  }
+  case "config": {
+    const { handleConfigCommand } = await import("./config-command");
+    process.exitCode = await handleConfigCommand(args.slice(1));
     break;
   }
   case "claude": {
@@ -907,6 +1003,11 @@ switch (command) {
       const { handleClaudeDesktopCommand } = await import("./claude-desktop");
       const exitCode = await handleClaudeDesktopCommand(args.slice(2));
       if (exitCode !== 0) process.exit(exitCode);
+      break;
+    }
+    if (args[1] === "config") {
+      const { handleClaudeConfigCommand } = await import("./integrations");
+      process.exitCode = await handleClaudeConfigCommand(args.slice(2));
       break;
     }
     process.exit(await cmdClaude(args.slice(1)));

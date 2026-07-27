@@ -4,7 +4,7 @@ description: ~/.opencodex/config.json 的所有字段 —— 顶层选项、prov
 ---
 
 opencodex 使用 `~/.opencodex/config.json` 配置。`ocx init` 和仪表盘会写入该文件，你也可以直接
-编辑；代理会在启动时重新加载。如果文件无法解析（例如被截断或不是有效 JSON），opencodex 会将
+编辑；代理会在启动时重新加载。**服务运行期间请优先停止代理或改用仪表盘/管理 API 再手改**：进程会把配置放在内存里，中途保存可能用内存快照覆盖磁盘。自 v2.7.41 起，手改的 `claudeCode` 子树在这些保存中会被保留；其他键（例如 `providers`）仍可能被覆盖。如果文件无法解析（例如被截断或不是有效 JSON），opencodex 会将
 其备份为 `config.json.invalid-<timestamp>`，在 console 中警告，再以默认值启动。文件缺失时也会
 回退到默认配置（单个 `openai` forward provider）。
 
@@ -147,6 +147,7 @@ x-opencodex-api-key: your-secret-token
 | `reasoningEfforts?` | `string[]` | provider 级需要公布和发送的 Codex reasoning label（`low`、`medium`、`high`、`xhigh`、`max`、`ultra`）。 |
 | `modelReasoningEfforts?` | `Record<string,string[]>` | 模型级 reasoning label。空数组会隐藏该模型的 effort 控件。 |
 | `modelSupportsReasoningSummaries?` | `Record<string,boolean>` | 模型级 reasoning summary 能力。设为 `false` 时不再声明 summary 支持，并在 `openai-responses` 请求前移除 summary-delivery 字段。 |
+| `modelReasoningSummaryDelivery?` | `Record<string,"sequential" \| "sequential_cutoff" \| "concurrent" \| "concurrent_cutoff">` | 模型级 Responses delivery enum。已配置模型保持 summary 能力，适配器只改写现有的 `stream_options.reasoning_summary_delivery`；同一模型不能同时将 summary 能力设为 `false`。 |
 | `reasoningEffortMap?` | `Record<string,string>` | provider 级 reasoning label wire alias。只在上游需要不同值时使用。 |
 | `modelReasoningEffortMap?` | `Record<string,Record<string,string>>` | 模型级 reasoning label wire alias。 |
 | `noReasoningModels?` | `string[]` | 拒绝 reasoning/thinking 参数的模型；adapter 会为它们移除 `reasoning_effort`。 |
