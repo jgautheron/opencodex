@@ -17,10 +17,9 @@ export interface TrayProxyStartIo {
   /**
    * Called once a live proxy is confirmed on `port` — whether it was already running or
    * this call just started it. `handleEnsure` performs the Grok-fence and Codex-model
-   * sync inline in both of its branches; this action skipped both entirely (devlog 260727
-   * grok-fence-parity: `ocx restart` losing them was caught by tests/grok-lifecycle.test.ts
-   * after restart was repointed at this action to fix the codexAutoStart no-op). Optional
-   * so tests that don't care about the sync can omit it.
+   * sync inline in both of its branches; this action skipped both entirely, so `ocx restart`
+   * silently lost them once restart was repointed at this action. Optional so tests that
+   * don't care about the sync can omit it.
    */
   onStarted?: (port: number) => void | Promise<void>;
 }
