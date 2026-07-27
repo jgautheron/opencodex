@@ -14,6 +14,15 @@ export interface TrayProxyStartIo {
   waitForProxy: () => Promise<TrayProxyLive | null>;
   info: (message: string) => void;
   error: (message: string) => void;
+  /**
+   * Called once a live proxy is confirmed on `port` — whether it was already running or
+   * this call just started it. `handleEnsure` performs the Grok-fence and Codex-model
+   * sync inline in both of its branches; this action skipped both entirely (devlog 260727
+   * grok-fence-parity: `ocx restart` losing them was caught by tests/grok-lifecycle.test.ts
+   * after restart was repointed at this action to fix the codexAutoStart no-op). Optional
+   * so tests that don't care about the sync can omit it.
+   */
+  onStarted?: (port: number) => void | Promise<void>;
 }
 
 /** Side-effect coordinator for the tray's fixed proxy-start action. */
@@ -21,6 +30,7 @@ export async function runTrayProxyStart(io: TrayProxyStartIo): Promise<boolean> 
   const live = await io.findLive();
   if (live) {
     io.info(`Proxy already running on port ${live.port}.`);
+    await io.onStarted?.(live.port);
     return true;
   }
 
@@ -40,6 +50,7 @@ export async function runTrayProxyStart(io: TrayProxyStartIo): Promise<boolean> 
     return false;
   }
   io.info(`Proxy running on port ${started.port}.`);
+  await io.onStarted?.(started.port);
   return true;
 }
 

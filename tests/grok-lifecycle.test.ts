@@ -87,8 +87,28 @@ describe("Grok fence lifecycle wiring", () => {
     expect(stopFn).toContain("return !stopFailed");
     expect(stopFn).not.toContain("process.exit(1)");
 
+    // handleEnsure() early-returns without relaunching when codexAutoStart is disabled,
+    // which silently ate `restart` too (devlog 260727 restart-ignores-codex-autostart) —
+    // handleTrayProxyStart() relaunches unconditionally instead.
     const restartCase = sliceFn(CLI_SOURCE, 'case "restart"', 'case "health"');
-    expect(restartCase).toContain("if (await handleStop()) await handleEnsure()");
+    expect(restartCase).toContain("if (await handleStop()) await handleTrayProxyStart()");
+  });
+
+  test("handleTrayProxyStart still syncs the Grok fence and Codex models (devlog 260727 grok-fence-parity)", () => {
+    // Repointing restart at handleTrayProxyStart (above) fixed the codexAutoStart no-op but
+    // silently dropped the Grok-fence/model sync handleEnsure always performed — caught by
+    // this suite failing on the OLD assertion above once the swap landed. Guard both sides:
+    // the sync exists in the function, and it's wired through onStarted (fires whether the
+    // proxy was already live or this call just started it), not just after a fresh spawn.
+    const trayStartFn = sliceFn(CLI_SOURCE, "async function handleTrayProxyStart(", "async function handleTrayProxyRestart(");
+    expect(trayStartFn).toContain("syncModelsToCodex(port)");
+    expect(trayStartFn).toContain('await import("../grok/sync")');
+    expect(trayStartFn).toContain("onStarted:");
+
+    const trayProxySource = readFileSync(join(import.meta.dir, "..", "src", "cli", "tray-proxy.ts"), "utf8");
+    const onStartedCalls = trayProxySource.match(/await io\.onStarted\?\.\(/g);
+    // Once for the already-live early return, once after a fresh start succeeds.
+    expect(onStartedCalls).toHaveLength(2);
   });
 
   test("the daemon's exit cleanup keeps the OCX_SERVICE exclusion and adds the ownership check", () => {

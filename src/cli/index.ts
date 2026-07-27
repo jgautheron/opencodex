@@ -387,6 +387,7 @@ async function handleEnsure() {
 
 /** Fixed tray action: start the proxy without depending on codexAutoStart. */
 async function handleTrayProxyStart(): Promise<void> {
+  const config = loadConfig();
   const ok = await runTrayProxyStart({
     findLive: findLiveProxy,
     diagnoseService: () => {
@@ -395,7 +396,6 @@ async function handleTrayProxyStart(): Promise<void> {
     },
     startService: () => serviceCommand("start"),
     startDirect: () => {
-      const config = loadConfig();
       const port = (config.port ?? 10100) > 0 ? (config.port ?? 10100) : 10100;
       const child = spawn(process.execPath, startArgv(port), {
         detached: true,
@@ -406,6 +406,19 @@ async function handleTrayProxyStart(): Promise<void> {
       child.unref();
     },
     waitForProxy,
+    onStarted: async port => {
+      await syncModelsToCodex(port).catch(e => {
+        console.error(`⚠️  Model sync skipped: ${e instanceof Error ? e.message : String(e)}`);
+      });
+      try {
+        const { syncGrokConfig } = await import("../grok/sync");
+        const g = await syncGrokConfig(port, config, config.hostname ? { hostname: config.hostname } : {});
+        if (g.changed) console.log("   + Grok Build config updated (~/.grok/config.toml)");
+        else if (!g.ok) console.error(`⚠️  ${g.message}`);
+      } catch (err) {
+        console.error(`⚠️  ${grokSyncFailureMessage(err)}`);
+      }
+    },
     info: message => console.log(message),
     error: message => console.error(message),
   });
