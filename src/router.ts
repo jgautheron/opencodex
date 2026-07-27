@@ -295,6 +295,44 @@ function isBareOpenAiFamilyModel(modelId: string): boolean {
   return !modelId.includes("/") && /^(?:gpt-|o1-|o3-|o4-)/.test(modelId);
 }
 
+/**
+ * A provider's `defaultModel`/`models[]` entry that looks like a bare OpenAI-family
+ * id (gpt-, o1-, o3-, or o4- prefixed, no slash) is unreachable under that bare name
+ * whenever an active native "openai" (Codex) provider is also configured: isBareOpenAiFamilyModel
+ * claims any such id first in routeModelInternal, before any other provider's
+ * defaultModel/models match is ever consulted (devlog 260727 subagent-cache-audit
+ * follow-up — found via a real routing collision between a custom gateway provider
+ * and the DEFAULT_SUBAGENT_MODELS roster, which reuses bare gpt-5.6-* names).
+ *
+ * The model is still reachable via the qualified "<provider>/<model>" form (the
+ * slash-namespace branch runs before the bare-family check) — this only warns that
+ * the BARE alias silently resolves elsewhere, which otherwise fails silently: no
+ * error, just the wrong provider and (for anything routed through openai-responses
+ * translation) no prompt-cache benefit from that provider's warm cache cohort.
+ * Config-only diagnostic; never changes routing.
+ */
+export function warnUnreachableBareModelAliases(config: OcxConfig): void {
+  const codex = config.providers[OPENAI_CODEX_PROVIDER_ID];
+  if (!codex || codex.disabled === true) return; // nothing claims bare ids first in that case
+  for (const [name, prov] of activeProviderEntries(config)) {
+    if (name === OPENAI_CODEX_PROVIDER_ID) continue;
+    const candidates = new Set<string>();
+    if (typeof prov.defaultModel === "string") candidates.add(prov.defaultModel);
+    if (Array.isArray(prov.models)) {
+      for (const m of prov.models) if (typeof m === "string") candidates.add(m);
+    }
+    for (const modelId of candidates) {
+      if (isBareOpenAiFamilyModel(modelId)) {
+        console.warn(
+          `⚠️  provider "${name}" model "${modelId}" is unreachable by that bare name — ` +
+          `the native "openai" provider claims all bare gpt-*/o1-*/o3-*/o4-* ids first. ` +
+          `Use "${name}/${modelId}" instead (e.g. in subagentModels, modelMap) to route to "${name}".`,
+        );
+      }
+    }
+  }
+}
+
 function routeResult(providerName: string, provider: OcxProviderConfig, modelId: string): RouteResult {
   const codexAccountMode = providerCodexAccountMode(providerName, provider);
   return {
