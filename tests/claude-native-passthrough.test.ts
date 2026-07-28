@@ -111,7 +111,7 @@ test("unmapped claude model + sk-ant credential passes through verbatim", async 
     expect(hit.headers.get("anthropic-beta")).toBe(OAUTH_HEADERS["anthropic-beta"]);
     expect(hit.headers.get("user-agent")).toBe("claude-cli/2.1.200");
     expect(hit.headers.get("x-app")).toBe("cli");
-    // Body untouched: thinking signature, cache_control, max_tokens all intact.
+    // Body is otherwise untouched: thinking signature, cache_control, max_tokens intact.
     expect(hit.body).toEqual(claudeBody());
 
     // Request log: native provider tag + usage incl. cache detail from the SSE tap.
@@ -174,6 +174,39 @@ test("native passthrough persists conversationId from metadata.user_id", async (
     expect(logs).toHaveLength(1);
     expect(logs[0]?.provider).toBe("anthropic-native");
     expect(logs[0]?.conversationId).toBe(createHash("sha256").update(userId).digest("hex").slice(0, 32));
+  } finally {
+    server.stop(true);
+    upstream.stop(true);
+  }
+});
+
+test("native passthrough stabilizes tools and system listings", async () => {
+  const captured: Captured[] = [];
+  const upstream = mockAnthropicUpstream(captured);
+  saveConfig(cfg(upstream.url.toString().replace(/\/$/, "")));
+  const server = startServer(0);
+  try {
+    const res = await fetch(new URL("/v1/messages", server.url), {
+      method: "POST",
+      headers: OAUTH_HEADERS,
+      body: JSON.stringify({
+        model: "claude-fable-5", max_tokens: 1,
+        system: [{
+          type: "text",
+          text: "<system-reminder>\nUser-invocable skills:\n\n- zeta: z\n- alpha: a\n</system-reminder>",
+        }],
+        tools: [
+          { name: "Zeta", input_schema: { type: "object" } },
+          { name: "Alpha", input_schema: { type: "object" } },
+        ],
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+    expect(captured[0]?.body.tools.map((tool: { name: string }) => tool.name)).toEqual(["Alpha", "Zeta"]);
+    const systemText = captured[0]?.body.system[0].text as string;
+    expect(systemText.indexOf("- alpha: a")).toBeLessThan(systemText.indexOf("- zeta: z"));
   } finally {
     server.stop(true);
     upstream.stop(true);

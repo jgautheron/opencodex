@@ -293,9 +293,11 @@ role、`tool_use_id` のない `tool_result`、id/name のない `tool_use`、na
 分岐点と最上位自動 `cache_control` を管理します。安定した会話では通常キャッシュヒット率が約
 99.9% です。
 
-**ネイティブ OpenAI/ChatGPT ルーティング:** セッションスコープ `prompt_cache_key`(`metadata.user_id` があれば
-使用、なければシステム内容ハッシュ使用)とキャッシュ選好のための `session_id` ヘッダーを作ります。
-キャッシュキーにはモデルと全体ツールスキーマが含まれます。
+**ネイティブ OpenAI/ChatGPT ルーティング:** システム内容がある場合、解決済みモデル、正規化された
+システム内容、全体ツールスキーマから内容スコープの `prompt_cache_key` を作ります。システム内容が
+ない場合は `metadata.user_id` を使います。メタデータがある場合は、バックエンド親和性のために別途
+セッションごとの `session_id` ヘッダーを作ります。ツールとシステムリマインダーの一覧は、どちらの
+キャッシュ入力を作る前にも正規化されます。
 
 **トークン計算:** Anthropic 出力は `input_tokens` から `cached_tokens` と `cache_write_tokens` を引き、
 それぞれ `cache_read_input_tokens` と `cache_creation_input_tokens` として公開します。リクエストログはこれを再び

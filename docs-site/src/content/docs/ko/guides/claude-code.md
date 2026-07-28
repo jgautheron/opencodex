@@ -330,9 +330,10 @@ role, `tool_use_id` 없는 `tool_result`, id/name 없는 `tool_use`, name 없는
 분기점과 최상위 자동 `cache_control`을 관리해요. 안정적인 대화에서는 보통 캐시 적중률이 약
 99.9%예요.
 
-**네이티브 OpenAI/ChatGPT 라우팅:** 세션 범위 `prompt_cache_key`(`metadata.user_id`가 있으면
-사용하고, 없으면 시스템 내용 해시 사용)와 캐시 선호도를 위한 `session_id` 헤더를 만들어요.
-캐시 키에는 모델과 전체 도구 스키마가 들어가요.
+**네이티브 OpenAI/ChatGPT 라우팅:** 시스템 내용이 있으면 확인된 모델, 정규화된 시스템 내용, 전체
+도구 스키마에서 내용 범위 `prompt_cache_key`를 만들어요. 시스템 내용이 없으면 `metadata.user_id`를
+대신 사용해요. 메타데이터가 있으면 백엔드 친화성을 위해 별도의 세션별 `session_id` 헤더를 만들어요.
+도구와 시스템 리마인더 목록은 두 캐시 입력을 만들기 전에 정규화돼요.
 
 **토큰 계산:** Anthropic 출력은 `input_tokens`에서 `cached_tokens`와 `cache_write_tokens`를 빼고,
 각각 `cache_read_input_tokens`와 `cache_creation_input_tokens`로 노출해요. 요청 로그는 이를 다시
